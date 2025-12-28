@@ -1,7 +1,7 @@
 # Btrfs Autosnap
 
 - A POSIX shell script that creates a new snapshot, then removes expired snapshots of btrfs subvolumes with a single-line command
-- Author: snoopy3476@outlook.com
+- Author: kim.hwiwon@outlook.com
 
 
 ## Description
@@ -19,7 +19,11 @@ By running this script everyday (using crontab, etc.), you can maintain enough n
 
 ## Usage
 
-`$ btrfs-autosnap [-t <snap_expiration_days>] [-n <snap_min_count>] <subvol-path-1> [subvol-path-2] ...`
+- Snapshot a target subvolume
+  `$ btrfs-autosnap [-t <snap_expiration_days>] [-n <snap_min_count>] <subvol-path-1> [subvol-path-2] ...`
+
+- Backup a snapshot to other btrfs subvolume (do incremental backup if possible)
+  `$ btrfs-autosnap-backup <src-snap-rootdir> <backup-snap-rootdir>`
 
 
 ## Snapshot path
@@ -48,6 +52,10 @@ inside the snapshot list dir with the following path:
 - Refresh snapshots of `./subvol`, `./subvol_2` with `SNAP_EXPIRATION_DAYS=(default)`, `SNAP_MIN_COUNT=30`
   - `$ sudo ./btrfs-autosnap -n30 ./subvol ./subvol2`
 
+- Find a latest snapshot among the snapshots of `/path/to/subvol`, and do incremental backup to another btrfs device subvolume
+  - `$ sudo ./btrfs-autosnap-backup /path/to/.@snapshots_subvol /other/path/to/inc_backup`
+
+
 
 ### Run the script everyday
 
@@ -57,7 +65,7 @@ inside the snapshot list dir with the following path:
 ```
 
 
-### Show previous versions (snapshot list) on Windows explorer remotely, when a btrfs subvolume is shared with samba 
+### Extra) Show previous versions (snapshot list) on Windows explorer remotely, when a btrfs subvolume is shared with samba 
 
 - /etc/samba/smbd.conf
 ```

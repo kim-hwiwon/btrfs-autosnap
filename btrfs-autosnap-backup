@@ -1,0 +1,76 @@
+#!/bin/sh
+
+# usage: btrfs-autosnap-backup <src-snap-rootdir> <backup-snap-rootdir>
+
+
+btrfs_visual_send_recv() {
+  (
+    SOURCE_SNAPSHOT="${1:?No target snapshot}"
+    PARENT_SNAPSHOT="${2}"
+
+    # related vars
+    SOURCE_SNAPSHOT_NAME="$(basename "$SOURCE_SNAPSHOT")"
+    unset C_REV C_RESET
+    if command -v tput >/dev/null; then C_REV="$(tput rev)"; C_RESET="$(tput sgr0)"; fi
+
+    if [ -n "$SOURCE_SNAPSHOT_NAME" ] && [ -d "$PARENT_SNAPSHOT" ]
+    then
+      printf "%sPerforming incremental backup...\n┌─< %s\n┟─< %s\n┗━━━━━━━🭬 %s\n\n" "${C_RESET}" "$PARENT_SNAPSHOT" "$SOURCE_SNAPSHOT" "$BACKUP_DIR"/ >&2
+    else
+      printf "%sPerforming initial backup... ('%s')\n\n" "${C_RESET}" "$SOURCE_SNAPSHOT_NAME" >&2
+      unset PARENT_SNAPSHOT
+    fi
+
+    ESTIMATED_DATA_SIZE="$(btrfs send --no-data ${PARENT_SNAPSHOT:+-p "$PARENT_SNAPSHOT"} "$SOURCE_SNAPSHOT" 2>/dev/null | btrfs receive --dump | sed -n 's/^update_extent .* len=\([0-9]*\)$/\1/p' | awk '{ sum += $1 } END { print sum }')"
+    ESTIMATED_METADATA_SIZE="$(btrfs send --no-data ${PARENT_SNAPSHOT:+-p "$PARENT_SNAPSHOT"} "$SOURCE_SNAPSHOT" 2>/dev/null | wc -c)"
+    ESTIMATED_SEND_SIZE="$((ESTIMATED_DATA_SIZE + ESTIMATED_METADATA_SIZE))"
+    ESTIMATED_SEND_SIZE_HUMAN_READABLE="$(numfmt --to=iec-i --format="%.1f" "${ESTIMATED_SEND_SIZE}")B"
+    PV_PROGRESS_FORMAT="%a %e |${C_REV}%p${C_RESET}| ${ESTIMATED_SEND_SIZE_HUMAN_READABLE} ━━%r━━🭬 %b"
+
+    btrfs send ${PARENT_SNAPSHOT:+-p "$PARENT_SNAPSHOT"} "$SOURCE_SNAPSHOT" | pv -F "$PV_PROGRESS_FORMAT" -s "$ESTIMATED_SEND_SIZE" | btrfs receive "$BACKUP_DIR"/
+  )
+}
+
+
+btrfs_backup_subvol() {
+  (
+    # source -> target config
+    SNAPSHOT_DIR="${1:?No source snapshot subvol dir}"
+    BACKUP_DIR="${2:?No target snapshot subvol dir}"
+
+    # parent snapshot search
+    LATEST_BACKUP="$(ls -td -- "${BACKUP_DIR}/@"* 2>/dev/null | head -n1 2>/dev/null)"
+    LATEST_BACKUP_NAME="$(basename "$LATEST_BACKUP" 2>/dev/null)"
+
+    # source snapshot search
+    LATEST_SNAPSHOT="$(ls -td -- "${SNAPSHOT_DIR}/@"* 2>/dev/null | head -n1 2>/dev/null)"
+    LATEST_SNAPSHOT_NAME="$(basename "$LATEST_SNAPSHOT" 2>/dev/null)"
+    PARENT_SNAPSHOT="${LATEST_BACKUP_NAME:+${SNAPSHOT_DIR}/${LATEST_BACKUP_NAME}}"
+
+
+    if ! mountpoint "$BACKUP_DIR" >/dev/null 2>/dev/null
+    then
+      printf "Backup path not mountpoint! (%s)\n" "$BACKUP_DIR" >&2
+      false
+
+    elif ! [ -n "$LATEST_SNAPSHOT_NAME" ]
+    then
+      printf "No snapshot found!\n" >&2
+      false
+
+
+    elif [ "$LATEST_BACKUP_NAME" = "$LATEST_SNAPSHOT_NAME" ]
+    then
+      printf "Already up-to-date! ('%s')\n" "$LATEST_SNAPSHOT_NAME" >&2
+
+    else
+
+      btrfs_visual_send_recv "$LATEST_SNAPSHOT" "$PARENT_SNAPSHOT"
+
+    fi
+
+  )
+}
+
+
+btrfs_backup_subvol "$@"
